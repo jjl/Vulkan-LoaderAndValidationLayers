@@ -3699,7 +3699,7 @@ static bool checkGraphicsOrComputeBit(const layer_data *my_data, VkQueueFlags fl
     if (!((flags & VK_QUEUE_GRAPHICS_BIT) || (flags & VK_QUEUE_COMPUTE_BIT)))
         return log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT)0, 0, __LINE__,
                        DRAWSTATE_INVALID_COMMAND_BUFFER, "DS",
-                       "Cannot call %s on a command buffer allocated from a pool without graphics capabilities.", name);
+                       "Cannot call %s on a command buffer allocated from a pool without graphics or compute capabilities.", name);
     return false;
 }
 
@@ -8589,6 +8589,31 @@ VKAPI_ATTR void VKAPI_CALL CmdCopyBufferToImage(VkCommandBuffer commandBuffer, V
     auto src_buff_state = getBufferState(dev_data, srcBuffer);
     auto dst_image_state = getImageState(dev_data, dstImage);
     if (cb_node && src_buff_state && dst_image_state) {
+
+        // Validate command buffer state
+        if (CB_RECORDING != cb_node->state) {
+            skip_call |=
+                log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT,
+                (uint64_t)cb_node->commandBuffer, __LINE__, VALIDATION_ERROR_01240, "DS",
+                    "Cannot call vkCmdCopyBufferToImage() on command buffer which is not in recording state. %s.",
+                    validation_error_map[VALIDATION_ERROR_01240]);
+        }
+        else {
+            skip_call |= ValidateCmdSubpassState(dev_data, cb_node, CMD_COPYBUFFERTOIMAGE);
+        }
+
+        // Command pool must support graphics, compute, or transfer operations
+        auto pPool = getCommandPoolNode(dev_data, cb_node->createInfo.commandPool);
+        VkQueueFlags flags = dev_data->phys_dev_properties.queue_family_properties[pPool->queueFamilyIndex].queueFlags;
+        if (0 == (flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT))) {
+            skip_call |=
+                log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT,
+                (uint64_t)cb_node->createInfo.commandPool, __LINE__, VALIDATION_ERROR_01241, "DS",
+                    "Cannot call vkCmdCopyBufferToImage() on a command buffer allocated from a pool without graphics, compute, "
+                    "or transfer capabilities. %s.",
+                    validation_error_map[VALIDATION_ERROR_01241]);
+        }
+
         skip_call |= ValidateImageSampleCount(dev_data, dst_image_state, VK_SAMPLE_COUNT_1_BIT,
                                               "vkCmdCopyBufferToImage(): dstImage", VALIDATION_ERROR_01232);
         skip_call |= ValidateMemoryIsBoundToBuffer(dev_data, src_buff_state, "vkCmdCopyBufferToImage()", VALIDATION_ERROR_02535);
@@ -8608,7 +8633,6 @@ VKAPI_ATTR void VKAPI_CALL CmdCopyBufferToImage(VkCommandBuffer commandBuffer, V
         function = [=]() { return ValidateBufferMemoryIsValid(dev_data, src_buff_state, "vkCmdCopyBufferToImage()"); };
         cb_node->validate_functions.push_back(function);
 
-        skip_call |= ValidateCmd(dev_data, cb_node, CMD_COPYBUFFERTOIMAGE, "vkCmdCopyBufferToImage()");
         UpdateCmdBufferLastCmd(dev_data, cb_node, CMD_COPYBUFFERTOIMAGE);
         skip_call |= insideRenderPass(dev_data, cb_node, "vkCmdCopyBufferToImage()", VALIDATION_ERROR_01242);
         for (uint32_t i = 0; i < regionCount; ++i) {
@@ -8635,6 +8659,31 @@ VKAPI_ATTR void VKAPI_CALL CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, V
     auto src_image_state = getImageState(dev_data, srcImage);
     auto dst_buff_state = getBufferState(dev_data, dstBuffer);
     if (cb_node && src_image_state && dst_buff_state) {
+
+        // Validate command buffer state
+        if (CB_RECORDING != cb_node->state) {
+            skip_call |=
+                log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT,
+                (uint64_t)cb_node->commandBuffer, __LINE__, VALIDATION_ERROR_01258, "DS",
+                    "Cannot call vkCmdCopyImageToBuffer() on command buffer which is not in recording state. %s.",
+                    validation_error_map[VALIDATION_ERROR_01258]);
+        }
+        else {
+            skip_call |= ValidateCmdSubpassState(dev_data, cb_node, CMD_COPYIMAGETOBUFFER);
+        }
+
+        // Command pool must support graphics, compute, or transfer operations
+        auto pPool = getCommandPoolNode(dev_data, cb_node->createInfo.commandPool);
+        VkQueueFlags queue_flags = dev_data->phys_dev_properties.queue_family_properties[pPool->queueFamilyIndex].queueFlags;
+        if (0 == (queue_flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT))) {
+            skip_call |=
+                log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT,
+                (uint64_t)cb_node->createInfo.commandPool, __LINE__, VALIDATION_ERROR_01259, "DS",
+                    "Cannot call vkCmdCopyImageToBuffer() on a command buffer allocated from a pool without graphics, compute, "
+                    "or transfer capabilities. %s.",
+                    validation_error_map[VALIDATION_ERROR_01259]);
+        }
+
         skip_call |= ValidateImageSampleCount(dev_data, src_image_state, VK_SAMPLE_COUNT_1_BIT,
                                               "vkCmdCopyImageToBuffer(): srcImage", VALIDATION_ERROR_01249);
         skip_call |= ValidateMemoryIsBoundToImage(dev_data, src_image_state, "vkCmdCopyImageToBuffer()", VALIDATION_ERROR_02537);
@@ -8658,7 +8707,6 @@ VKAPI_ATTR void VKAPI_CALL CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, V
         };
         cb_node->validate_functions.push_back(function);
 
-        skip_call |= ValidateCmd(dev_data, cb_node, CMD_COPYIMAGETOBUFFER, "vkCmdCopyImageToBuffer()");
         UpdateCmdBufferLastCmd(dev_data, cb_node, CMD_COPYIMAGETOBUFFER);
         skip_call |= insideRenderPass(dev_data, cb_node, "vkCmdCopyImageToBuffer()", VALIDATION_ERROR_01260);
         for (uint32_t i = 0; i < regionCount; ++i) {
